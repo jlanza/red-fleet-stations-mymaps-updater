@@ -11,6 +11,8 @@ from datetime import datetime
 import argparse
 from dotenv import load_dotenv
 
+DEFAULT_LOG_LEVEL = "INFO"
+
 DEFAULT_LOG_FILE="stations.log"
 
 DEFAULT_STATIONS_PRICE_FILE="gasolineras_red_fleet_precio.kml"
@@ -273,15 +275,14 @@ Direccion: {direccion}"""
 
 if __name__ == "__main__":
 
-    if os.path.exists('.env'):
-        load_dotenv('.env', override=True)
+    load_dotenv('.env', override=True)
 
-        CIRCULO_CONDUCTORES_CSV_FILENAME = os.getenv("CIRCULO_CONDUCTORES_CSV_FILENAME", DEFAULT_CIRCULO_CONDUCTORES_CSV_FILENAME)
-        CIRCULO_CONDUCTORES_SHEET_URL = os.getenv("CIRCULO_CONDUCTORES_SHEET_URL", DEFAULT_CIRCULO_CONDUCTORES_SHEET_URL)
-        PRICE_URL = os.getenv("MINISTRY_PRICE_URL", DEFAULT_MINISTRY_PRICE_URL)
-        LOG_FILE = os.getenv("LOG_STATIONS_FILE", DEFAULT_LOG_FILE)
-        STATIONS_FILE = os.getenv("STATIONS_PRICE_FILE", DEFAULT_STATIONS_PRICE_FILE)
-
+    CIRCULO_CONDUCTORES_CSV_FILENAME = os.getenv("CIRCULO_CONDUCTORES_CSV_FILENAME", DEFAULT_CIRCULO_CONDUCTORES_CSV_FILENAME)
+    CIRCULO_CONDUCTORES_SHEET_URL = os.getenv("CIRCULO_CONDUCTORES_SHEET_URL", DEFAULT_CIRCULO_CONDUCTORES_SHEET_URL)
+    PRICE_URL = os.getenv("MINISTRY_PRICE_URL", DEFAULT_MINISTRY_PRICE_URL)
+    LOG_FILE = os.getenv("LOG_STATIONS_FILE", DEFAULT_LOG_FILE)
+    STATIONS_FILE = os.getenv("STATIONS_PRICE_FILE", DEFAULT_STATIONS_PRICE_FILE)
+    LOG_LEVEL = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper()
 
     parser = argparse.ArgumentParser(
         description="Downloading prices for Circulo Conductores petrol stations",
@@ -299,7 +300,9 @@ if __name__ == "__main__":
 
     # Set up logging to write to a file instead of the console
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    # Convert the string to a numeric logging level
+    log_level = getattr(logging, LOG_LEVEL, logging.INFO)
+    logger.setLevel(log_level)
 
     # Handler para fichero rotativo (100MB, hasta 3 backups)
     file_handler = RotatingFileHandler(
@@ -315,11 +318,13 @@ if __name__ == "__main__":
         logger.addHandler(console_handler)
 
 
+    logging.info("📥 Retrieving and processing Circulo Conductores gas station data")
     df_cc = get_circulo_conductores_dataframe(CIRCULO_CONDUCTORES_CSV_FILENAME, CIRCULO_CONDUCTORES_SHEET_URL)
 
     # Remove rows where the "Red Fleet" column is "No"
     df_cc = df_cc[df_cc["Red Fleet"].str.lower() != "no"]
     
+    logging.info("📥 Retrieving and processing Ministry gas station data")
     df_min = get_ministry_dataframe(PRICE_URL)    
 
     df_cc, df_min = normalize_dfs(df_cc, df_min)
@@ -327,10 +332,12 @@ if __name__ == "__main__":
     # Group stations by province
     stations_grouped = df_min.groupby("PROVINCIA")
 
+    logging.info("🔎 Matching gas station locations")
     # Apply the function
     df_cc[["Precio Gasolina 95 E5", "Precio Gasoleo A"]] = df_cc.apply(lambda row: price_nearest_station(row, stations_grouped), axis=1, result_type="expand")
 
     df_cc.to_csv(STATIONS_FILE.replace(".kml", ".csv"), index=False)
 
+    logging.info("🗺️ Creating KML and GPX files")
     create_kml(df_cc, STATIONS_FILE)
     create_gpx(df_cc, STATIONS_FILE.replace(".kml", ".gpx"))

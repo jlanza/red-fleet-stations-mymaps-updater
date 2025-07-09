@@ -5,6 +5,8 @@ from logging.handlers import RotatingFileHandler
 import argparse
 from dotenv import load_dotenv
 
+DEFAULT_LOG_LEVEL = "INFO"
+
 # Chrome User-Agent on Windows 10
 CHROME_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -63,9 +65,9 @@ def stored_session_google():
 
 
 # https://scribe.rawbit.ninja/@adequatica/google-authentication-with-playwright-8233b207b71a
-def update_mymap_google(headless=True, persistent=False):
+def update_mymap_google(headless=True, persistent=False, docker_server=None):
     with sync_playwright() as p:
-        logging.info("\n🌐 Iniciando Playwright...")
+        logging.info("🌐 Starting Playwright...")
         if persistent:
             # If you want to use a persistent session
             browser = p.chromium.launch_persistent_context(
@@ -75,9 +77,17 @@ def update_mymap_google(headless=True, persistent=False):
             page = browser.new_page()
         else:
             # If you want to use a non-persistent session
-            browser = p.chromium.launch(
-                args=["--disable-blink-features=AutomationControlled"], 
-                headless=headless) 
+            if docker_server:
+                # If running in Docker, connect to the Playwright server
+                logging.info(f"🔗 Connecting to Playwright in Docker: {docker_server}")
+                browser = p.chromium.connect(docker_server)
+            else:
+                # If running locally, launch a new browser instance
+                logging.info("🔗 Using Playwright locally...")
+                browser = p.chromium.launch(
+                    args=["--disable-blink-features=AutomationControlled"], 
+                    headless=headless)
+
             context = browser.new_context(user_agent=CHROME_USER_AGENT)
             page = context.new_page()
 
@@ -129,24 +139,24 @@ def update_mymap_google(headless=True, persistent=False):
 
 if __name__ == "__main__":
 
-    if os.path.exists('.env'):
-        load_dotenv('.env', override=True)
-        # Load environment variables from .env if they exist
-        USERNAME = os.getenv("USERNAME")
-        PASSWORD = os.getenv("PASSWORD")
-        MAP_URL = os.getenv("MAP_URL")
-        STATIONS_FILE = os.getenv("STATIONS_PRICE_FILE")
-        missing_vars = [var for var, val in [
-            ("USERNAME", USERNAME),
-            ("PASSWORD", PASSWORD),
-            ("MAP_URL", MAP_URL),
-            ("STATIONS_FILE", STATIONS_FILE)
-        ] if not val]
-        if missing_vars:
-            print(f"❌ The following variables are missing in the .env file: {', '.join(missing_vars)}")
-            exit(1)
-        LOG_FILE = os.getenv("LOG_MYMAPS_FILE", DEFAULT_LOG_FILE)
-        USER_SESSION_DATA_DIR = os.getenv("USER_SESSION_DATA_DIR", DEFAULT_USER_SESSION_DATA_DIR)
+    load_dotenv('.env', override=True)
+    # Load environment variables from .env if they exist
+    USERNAME = os.getenv("USERNAME")
+    PASSWORD = os.getenv("PASSWORD")
+    MAP_URL = os.getenv("MAP_URL")
+    STATIONS_FILE = os.getenv("STATIONS_PRICE_FILE")
+    missing_vars = [var for var, val in [
+        ("USERNAME", USERNAME),
+        ("PASSWORD", PASSWORD),
+        ("MAP_URL", MAP_URL),
+        ("STATIONS_FILE", STATIONS_FILE)
+    ] if not val]
+    if missing_vars:
+        print(f"❌ The following variables are missing in the .env file: {', '.join(missing_vars)}")
+        exit(1)
+    LOG_FILE = os.getenv("LOG_MYMAPS_FILE", DEFAULT_LOG_FILE)
+    USER_SESSION_DATA_DIR = os.getenv("USER_SESSION_DATA_DIR", DEFAULT_USER_SESSION_DATA_DIR)
+    LOG_LEVEL = os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper()
 
     parser = argparse.ArgumentParser(
         description="Update Google My Maps with Playwright",
@@ -166,6 +176,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--docker-server",
+        required=False,
+        help="WebSocket URL of the Playwright server running in Docker (e.g., ws://localhost:3000)"
+    )
+
+    parser.add_argument(
         "--log-console",
         action="store_true",
         default=False,
@@ -180,7 +196,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Validate that only allowed arguments are passed
-    allowed_args = {"persistent", "headed", "log_console", "file"}
+    allowed_args = {"persistent", "headed", "log_console", "file", "docker_server"}
     for arg in vars(args):
         if arg not in allowed_args:
             parser.error(f"Argument not allowed: --{arg.replace('_', '-')}")
@@ -189,10 +205,16 @@ if __name__ == "__main__":
     if args.file:
         STATIONS_FILE = args.file
 
+    # If --docker-server is provided, override persistent and headed to False
+    if args.docker_server:
+        args.persistent = False
+        args.headed = False
 
     # Set up logging to write to a file instead of the console
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    # Convert the string to a numeric logging level
+    log_level = getattr(logging, LOG_LEVEL, logging.INFO)
+    logger.setLevel(log_level)
 
     # Handler para fichero rotativo (100MB, hasta 3 backups)
     file_handler = RotatingFileHandler(

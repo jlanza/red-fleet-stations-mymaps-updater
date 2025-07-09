@@ -41,6 +41,8 @@ This approach helps generalize the workflow and reduces the risk to your main ac
 - pandas, requests, geopy, python-dotenv -->
 
 ## Usage
+### Run Locally
+
 1. Clone the repository and install dependencies:
    ```sh
    pip install -r requirements.txt
@@ -70,7 +72,59 @@ This approach helps generalize the workflow and reduces the risk to your main ac
    ```sh
    python update_mymaps.py
    ```
+### With Playwright Server Docker
 
+You can run Playwright Server in Docker while keeping your the program running on the host system. When running remotely, ensure the Playwright version in your programs matches the version running in the Docker container.
+
+1. Check Playwright version
+
+```sh
+playwright --version
+```
+
+2. Run the Playwright Server. Note we are using 1.48.0-focal for this example.
+
+```sh
+docker run -p 3000:3000 --rm --init -it --workdir /pwuser --user pwuser \
+>   -e PW_CHROMIUM_ARGS="--disable-blink-features=AutomationControlled" \
+>   mcr.microsoft.com/playwright:v1.48.0-focal \
+>   /bin/sh -c "npx -y playwright@1.48.0 run-server --port 3000 --host 0.0.0.0"
+```
+
+3. Connecting to the server
+
+```sh
+python update_mymaps.py --docker-server ws://127.0.0.1:3000
+```
+
+### In Docker environment
+Make sure you have a `requirements.txt` file listing your dependencies.
+
+Create a `.env` file and define the required environment variables.
+
+Build the Docker image:
+```sh
+docker build -t red-fleet-stations-mymaps-updater .
+```
+
+You then have to options:
+
+1. Use ephemeral container
+
+```sh
+docker run --rm --env-file .env.docker red-fleet-stations-mymaps-updater
+```
+2. Create and reuse the same container
+
+```sh
+docker create --name red-fleet-stations-mymaps-updater-container --env-file .env red-fleet-stations-mymaps-updater
+docker start -a red-fleet-stations-mymaps-updater-container
+```
+
+Optionally get the log files or inspect the application directory:
+```sh
+docker cp red-fleet-stations-mymaps-updater-container:/app ./app_copy
+```
 
 ## Data Sources
 <!-- Ministerio para la Transformación Digital y de la Función Pública -->
