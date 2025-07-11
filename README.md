@@ -121,10 +121,49 @@ docker create --name red-fleet-stations-mymaps-updater-container --env-file .env
 docker start -a red-fleet-stations-mymaps-updater-container
 ```
 
+When using the named container, you do not need to specify the environment variables file path each time you start the container. The environment variables are already set during container creation.
+
 Optionally get the log files or inspect the application directory:
 ```sh
 docker cp red-fleet-stations-mymaps-updater-container:/app ./app_copy
 ```
+## Scheduling updates
+
+Make sure to create a persistent Docker container with a specific name and attach the corresponding environment variables when you create it. This is the simplest way to automate execution, as you won't need to reference the `.env` file each time the task is run—the container will retain the configuration set at creation.
+
+```sh
+docker create --name red-fleet-stations-mymaps-updater-container --env-file .env red-fleet-stations-mymaps-updater
+```
+
+You can then schedule the container to run at your desired time using a cron job, and the environment variables will already be set.
+
+```sh
+crontab -e
+```
+
+```cron
+35 2 * * * /usr/bin/docker start -a red-fleet-stations-mymaps-updater-container > /dev/null 2>&1
+```
+
+<!-- To run the container and automatically copy all `.log` files from inside the container to your host after execution, you can use a shell script like:
+
+```sh
+#!/bin/bash
+CONTAINER_NAME=red-fleet-stations-mymaps-updater-container
+LOG_DIR=/home/user/logs/red-fleet-stations-mymaps-updater
+
+# Create the log directory if it does not exist
+mkdir -p $LOG_DIR
+
+# Start the container and wait for it to finish
+docker start -a $CONTAINER_NAME
+
+# Only copy .log files
+docker cp $CONTAINER_NAME:/app/. $LOG_DIR
+find $LOG_DIR -type f ! -name "*.log" -delete 
+```
+-->
+
 
 ## Data Sources
 <!-- Ministerio para la Transformación Digital y de la Función Pública -->
